@@ -62,7 +62,7 @@ object App {
         val multiLayerNetwork = MultiLayerNetwork(multiLayerConfiguration)
         multiLayerNetwork.init()
 
-        for (i in 0 until 25) {
+        for (i in 0 until 5) {
             println("Epoch $i")
             multiLayerNetwork.fit(trainDatasetIterator)
         }
