@@ -3,6 +3,12 @@ package be.yh
 import org.datavec.api.records.reader.impl.collection.ListStringRecordReader
 import org.datavec.api.split.ListStringSplit
 import org.deeplearning4j.datasets.datavec.RecordReaderDataSetIterator
+import org.deeplearning4j.earlystopping.EarlyStoppingConfiguration
+import org.deeplearning4j.earlystopping.saver.LocalFileModelSaver
+import org.deeplearning4j.earlystopping.scorecalc.DataSetLossCalculator
+import org.deeplearning4j.earlystopping.termination.MaxEpochsTerminationCondition
+import org.deeplearning4j.earlystopping.termination.MaxTimeIterationTerminationCondition
+import org.deeplearning4j.earlystopping.trainer.EarlyStoppingTrainer
 import org.deeplearning4j.eval.Evaluation
 import org.deeplearning4j.nn.conf.MultiLayerConfiguration
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration
@@ -13,6 +19,9 @@ import org.deeplearning4j.nn.conf.layers.OutputLayer
 import org.deeplearning4j.nn.conf.layers.SubsamplingLayer
 import org.deeplearning4j.nn.multilayer.MultiLayerNetwork
 import org.deeplearning4j.nn.weights.WeightInit
+import org.deeplearning4j.ui.api.UIServer
+import org.deeplearning4j.ui.stats.StatsListener
+import org.deeplearning4j.ui.storage.InMemoryStatsStorage
 import org.nd4j.linalg.activations.Activation
 import org.nd4j.linalg.learning.config.Adam
 import org.nd4j.linalg.lossfunctions.LossFunctions
@@ -20,6 +29,7 @@ import java.io.File
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.util.*
+import java.util.concurrent.TimeUnit
 import java.util.stream.Collectors.toList
 import kotlin.streams.asStream
 
@@ -51,31 +61,62 @@ object App {
 
     @JvmStatic
     fun main(args: Array<String>) {
+        val uiServer = UIServer.getInstance()
+        val inMemoryStatsStorage = InMemoryStatsStorage()
+        uiServer.attach(inMemoryStatsStorage)
+
         val dataset = getDataSet()
-        val trainDatasetIterator = createDatasetIterator(dataset.subList(0, 12_500))
-        // val trainDatasetIterator = createDatasetIterator(dataset.subList(0, 50_000))
-        val testDatasetIterator = createDatasetIterator(dataset.subList(12_500, 15_000))
-        // val testDatasetIterator = createDatasetIterator(dataset.subList(50_000, 60_000))
+//        val trainDatasetIterator = createDatasetIterator(dataset.subList(0, 12_500))
+         val trainDatasetIterator = createDatasetIterator(dataset.subList(0, 50_000))
+//        val testDatasetIterator = createDatasetIterator(dataset.subList(12_500, 15_000))
+         val testDatasetIterator = createDatasetIterator(dataset.subList(50_000, 60_000))
 
-        val multiLayerConfiguration = buildCNN()
+        val cnnConfig = buildCNN()
 
-        val multiLayerNetwork = MultiLayerNetwork(multiLayerConfiguration)
-        multiLayerNetwork.init()
+        val cnn = MultiLayerNetwork(cnnConfig)
+        cnn.init()
+        cnn.setListeners(StatsListener(inMemoryStatsStorage))
+        val earlyStopping = false;
 
-        for (i in 0 until 5) {
-            println("Epoch $i")
-            multiLayerNetwork.fit(trainDatasetIterator)
+        if (earlyStopping) {
+            val saveDirectory = System.getProperty("current.dir") + "/DL4JEarlyStoppingModels"
+            File(saveDirectory).mkdir()
+
+            val saver = LocalFileModelSaver(saveDirectory)
+
+            val esConf = EarlyStoppingConfiguration.Builder<MultiLayerNetwork>()
+                    .epochTerminationConditions(MaxEpochsTerminationCondition(5))
+                    .iterationTerminationConditions(MaxTimeIterationTerminationCondition(5, TimeUnit.MINUTES))
+                    .scoreCalculator(DataSetLossCalculator(testDatasetIterator, true))
+                    .evaluateEveryNEpochs(1)
+                    .modelSaver(saver)
+                    .build()
+
+            val earlyStoppingTrainer = EarlyStoppingTrainer(esConf, cnnConfig, trainDatasetIterator)
+            val result = earlyStoppingTrainer.fit()
+
+            println("Termination reason: " + result.terminationReason)
+            println("Termination details: " + result.terminationDetails)
+            println("Total epochs: " + result.totalEpochs)
+            println("Best epoch number: " + result.bestModelEpoch)
+            println("Score at best epoch: " + result.bestModelScore)
+            println(result.scoreVsEpoch)
+        } else {
+            for (i in 0 until 5) {
+                println("Epoch $i")
+                cnn.fit(trainDatasetIterator)
+            }
+
+            val evaluation = Evaluation(10)
+            while (testDatasetIterator.hasNext()) {
+                val next = testDatasetIterator.next()
+                val output = cnn.output(next.features)
+                evaluation.eval(next.labels, output)
+            }
+
+            println(evaluation.stats())
+            println(evaluation.confusionToString())
         }
-
-        val evaluation = Evaluation(10)
-        while (testDatasetIterator.hasNext()) {
-            val next = testDatasetIterator.next()
-            val output = multiLayerNetwork.output(next.features)
-            evaluation.eval(next.labels, output)
-        }
-
-        println(evaluation.stats())
-        println(evaluation.confusionToString())
     }
 
     private fun buildCNN(): MultiLayerConfiguration {
@@ -112,6 +153,7 @@ object App {
                         .activation(Activation.SOFTMAX)
                         .build())
                 .setInputType(InputType.convolutionalFlat(28, 28, 1)) // InputType.convolutional for normal image
+                .backprop(true)
                 .build()
     }
 
@@ -137,7 +179,7 @@ object App {
     private fun createDatasetIterator(dataset: MutableList<List<String>>): RecordReaderDataSetIterator {
         val listStringRecordReader = ListStringRecordReader()
         listStringRecordReader.initialize(ListStringSplit(dataset))
-        return RecordReaderDataSetIterator(listStringRecordReader, 50, 28 * 28, 10)
+        return RecordReaderDataSetIterator(listStringRecordReader, 100, 28 * 28, 10)
     }
 
     private fun getDataSet(): MutableList<List<String>> {
