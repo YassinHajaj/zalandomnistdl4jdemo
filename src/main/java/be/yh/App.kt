@@ -13,10 +13,7 @@ import org.deeplearning4j.eval.Evaluation
 import org.deeplearning4j.nn.conf.MultiLayerConfiguration
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration
 import org.deeplearning4j.nn.conf.inputs.InputType
-import org.deeplearning4j.nn.conf.layers.ConvolutionLayer
-import org.deeplearning4j.nn.conf.layers.DenseLayer
-import org.deeplearning4j.nn.conf.layers.OutputLayer
-import org.deeplearning4j.nn.conf.layers.SubsamplingLayer
+import org.deeplearning4j.nn.conf.layers.*
 import org.deeplearning4j.nn.multilayer.MultiLayerNetwork
 import org.deeplearning4j.nn.weights.WeightInit
 import org.deeplearning4j.ui.api.UIServer
@@ -57,7 +54,7 @@ object App {
     private fun createDatasetIterator(dataset: MutableList<List<String>>): RecordReaderDataSetIterator {
         val listStringRecordReader = ListStringRecordReader()
         listStringRecordReader.initialize(ListStringSplit(dataset))
-        return RecordReaderDataSetIterator(listStringRecordReader, 75, 28 * 28, 10)
+        return RecordReaderDataSetIterator(listStringRecordReader, 128, 28 * 28, 10)
     }
 
     private fun regularLearning(cnn: MultiLayerNetwork, trainDatasetIterator: RecordReaderDataSetIterator, testDatasetIterator: RecordReaderDataSetIterator) {
@@ -115,23 +112,31 @@ object App {
                         .nOut(20)
                         .activation(Activation.IDENTITY)
                         .build())
-                .layer(1, SubsamplingLayer.Builder(SubsamplingLayer.PoolingType.MAX)
+                .layer(1, BatchNormalization.Builder().build())
+                .layer(2, SubsamplingLayer.Builder(SubsamplingLayer.PoolingType.MAX)
                         .kernelSize(2, 2)
                         .stride(2, 2)
                         .build())
-                .layer(2, ConvolutionLayer.Builder(5, 5)
+                .layer(3, ConvolutionLayer.Builder(5, 5)
                         .stride(1, 1) // nIn need not specified in later layers
                         .nOut(50)
                         .activation(Activation.IDENTITY)
                         .build())
-                .layer(3, SubsamplingLayer.Builder(SubsamplingLayer.PoolingType.MAX)
+                .layer(4, BatchNormalization.Builder().build())
+                .layer(5, SubsamplingLayer.Builder(SubsamplingLayer.PoolingType.MAX)
                         .kernelSize(2, 2)
                         .stride(2, 2)
                         .build())
-                .layer(4, DenseLayer.Builder().activation(Activation.RELU)
-                        .nOut(500).dropOut(0.5)
+                .layer(6, DenseLayer.Builder().activation(Activation.RELU)
+                        .nOut(500)
+                        .dropOut(0.5)
                         .build())
-                .layer(5, OutputLayer.Builder(LossFunctions.LossFunction.NEGATIVELOGLIKELIHOOD)
+                .layer(7, BatchNormalization.Builder().build())
+                .layer(8, DenseLayer.Builder().activation(Activation.RELU)
+                        .nOut(500)
+                        .dropOut(0.5)
+                        .build())
+                .layer(9, OutputLayer.Builder(LossFunctions.LossFunction.NEGATIVELOGLIKELIHOOD)
                         .nOut(10)
                         .activation(Activation.SOFTMAX)
                         .build())
