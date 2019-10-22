@@ -102,7 +102,7 @@ object App {
             println("Score at best epoch: " + result.bestModelScore)
             println(result.scoreVsEpoch)
         } else {
-            for (i in 0 until 5) {
+            for (i in 0 until 10) {
                 println("Epoch $i")
                 cnn.fit(trainDatasetIterator)
             }
@@ -179,7 +179,7 @@ object App {
     private fun createDatasetIterator(dataset: MutableList<List<String>>): RecordReaderDataSetIterator {
         val listStringRecordReader = ListStringRecordReader()
         listStringRecordReader.initialize(ListStringSplit(dataset))
-        return RecordReaderDataSetIterator(listStringRecordReader, 100, 28 * 28, 10)
+        return RecordReaderDataSetIterator(listStringRecordReader, 75, 28 * 28, 10)
     }
 
     private fun getDataSet(): MutableList<List<String>> {
