@@ -26,38 +26,9 @@ import org.nd4j.linalg.activations.Activation
 import org.nd4j.linalg.learning.config.Adam
 import org.nd4j.linalg.lossfunctions.LossFunctions
 import java.io.File
-import java.io.IOException
-import java.nio.ByteBuffer
-import java.util.*
 import java.util.concurrent.TimeUnit
-import java.util.stream.Collectors.toList
-import kotlin.streams.asStream
 
-
-/**
- * Hello world!
- */
 object App {
-
-    private val MAGIC_OFFSET = 0
-    private val OFFSET_SIZE = 4 //in bytes
-
-    private val LABEL_MAGIC = 2049
-    private val IMAGE_MAGIC = 2051
-
-    private val NUMBER_ITEMS_OFFSET = 4
-    private val ITEMS_SIZE = 4
-
-    private val NUMBER_OF_ROWS_OFFSET = 8
-    private val ROWS_SIZE = 4
-    val ROWS = 28
-
-    private val NUMBER_OF_COLUMNS_OFFSET = 12
-    private val COLUMNS_SIZE = 4
-    val COLUMNS = 28
-
-    private val IMAGE_OFFSET = 16
-    private val IMAGE_SIZE = ROWS * COLUMNS
 
     @JvmStatic
     fun main(args: Array<String>) {
@@ -65,11 +36,9 @@ object App {
         val inMemoryStatsStorage = InMemoryStatsStorage()
         uiServer.attach(inMemoryStatsStorage)
 
-        val dataset = getDataSet()
-//        val trainDatasetIterator = createDatasetIterator(dataset.subList(0, 12_500))
-         val trainDatasetIterator = createDatasetIterator(dataset.subList(0, 50_000))
-//        val testDatasetIterator = createDatasetIterator(dataset.subList(12_500, 15_000))
-         val testDatasetIterator = createDatasetIterator(dataset.subList(50_000, 60_000))
+        val dataset = ZalandaMNISTLoader().getDataSet()
+        val trainDatasetIterator = createDatasetIterator(dataset.subList(0, 50_000))
+        val testDatasetIterator = createDatasetIterator(dataset.subList(50_000, 60_000))
 
         val cnnConfig = buildCNN()
 
@@ -79,44 +48,58 @@ object App {
         val earlyStopping = false;
 
         if (earlyStopping) {
-            val saveDirectory = System.getProperty("current.dir") + "/DL4JEarlyStoppingModels"
-            File(saveDirectory).mkdir()
-
-            val saver = LocalFileModelSaver(saveDirectory)
-
-            val esConf = EarlyStoppingConfiguration.Builder<MultiLayerNetwork>()
-                    .epochTerminationConditions(MaxEpochsTerminationCondition(5))
-                    .iterationTerminationConditions(MaxTimeIterationTerminationCondition(5, TimeUnit.MINUTES))
-                    .scoreCalculator(DataSetLossCalculator(testDatasetIterator, true))
-                    .evaluateEveryNEpochs(1)
-                    .modelSaver(saver)
-                    .build()
-
-            val earlyStoppingTrainer = EarlyStoppingTrainer(esConf, cnnConfig, trainDatasetIterator)
-            val result = earlyStoppingTrainer.fit()
-
-            println("Termination reason: " + result.terminationReason)
-            println("Termination details: " + result.terminationDetails)
-            println("Total epochs: " + result.totalEpochs)
-            println("Best epoch number: " + result.bestModelEpoch)
-            println("Score at best epoch: " + result.bestModelScore)
-            println(result.scoreVsEpoch)
+            earlyStoppingLearning(testDatasetIterator, cnnConfig, trainDatasetIterator)
         } else {
-            for (i in 0 until 10) {
-                println("Epoch $i")
-                cnn.fit(trainDatasetIterator)
-            }
-
-            val evaluation = Evaluation(10)
-            while (testDatasetIterator.hasNext()) {
-                val next = testDatasetIterator.next()
-                val output = cnn.output(next.features)
-                evaluation.eval(next.labels, output)
-            }
-
-            println(evaluation.stats())
-            println(evaluation.confusionToString())
+            regularLearning(cnn, trainDatasetIterator, testDatasetIterator)
         }
+    }
+
+    private fun createDatasetIterator(dataset: MutableList<List<String>>): RecordReaderDataSetIterator {
+        val listStringRecordReader = ListStringRecordReader()
+        listStringRecordReader.initialize(ListStringSplit(dataset))
+        return RecordReaderDataSetIterator(listStringRecordReader, 75, 28 * 28, 10)
+    }
+
+    private fun regularLearning(cnn: MultiLayerNetwork, trainDatasetIterator: RecordReaderDataSetIterator, testDatasetIterator: RecordReaderDataSetIterator) {
+        for (i in 0 until 10) {
+            println("Epoch $i")
+            cnn.fit(trainDatasetIterator)
+        }
+
+        val evaluation = Evaluation(10)
+        while (testDatasetIterator.hasNext()) {
+            val next = testDatasetIterator.next()
+            val output = cnn.output(next.features)
+            evaluation.eval(next.labels, output)
+        }
+
+        println(evaluation.stats())
+        println(evaluation.confusionToString())
+    }
+
+    private fun earlyStoppingLearning(testDatasetIterator: RecordReaderDataSetIterator, cnnConfig: MultiLayerConfiguration, trainDatasetIterator: RecordReaderDataSetIterator) {
+        val saveDirectory = System.getProperty("current.dir") + "/DL4JEarlyStoppingModels"
+        File(saveDirectory).mkdir()
+
+        val saver = LocalFileModelSaver(saveDirectory)
+
+        val esConf = EarlyStoppingConfiguration.Builder<MultiLayerNetwork>()
+                .epochTerminationConditions(MaxEpochsTerminationCondition(5))
+                .iterationTerminationConditions(MaxTimeIterationTerminationCondition(5, TimeUnit.MINUTES))
+                .scoreCalculator(DataSetLossCalculator(testDatasetIterator, true))
+                .evaluateEveryNEpochs(1)
+                .modelSaver(saver)
+                .build()
+
+        val earlyStoppingTrainer = EarlyStoppingTrainer(esConf, cnnConfig, trainDatasetIterator)
+        val result = earlyStoppingTrainer.fit()
+
+        println("Termination reason: " + result.terminationReason)
+        println("Termination details: " + result.terminationDetails)
+        println("Total epochs: " + result.totalEpochs)
+        println("Best epoch number: " + result.bestModelEpoch)
+        println("Score at best epoch: " + result.bestModelScore)
+        println(result.scoreVsEpoch)
     }
 
     private fun buildCNN(): MultiLayerConfiguration {
@@ -174,59 +157,5 @@ object App {
                         .build()
                 )
                 .build()
-    }
-
-    private fun createDatasetIterator(dataset: MutableList<List<String>>): RecordReaderDataSetIterator {
-        val listStringRecordReader = ListStringRecordReader()
-        listStringRecordReader.initialize(ListStringSplit(dataset))
-        return RecordReaderDataSetIterator(listStringRecordReader, 75, 28 * 28, 10)
-    }
-
-    private fun getDataSet(): MutableList<List<String>> {
-        val labelsFile = File("C:\\Users\\yassin.hajaj\\IdeaProjects\\zalandomnistdl4jdemo\\src\\main\\resources\\fashion\\train-labels-idx1-ubyte")
-        val imagesFile = File("C:\\Users\\yassin.hajaj\\IdeaProjects\\zalandomnistdl4jdemo\\src\\main\\resources\\fashion\\train-images-idx3-ubyte")
-
-        val labelBytes = labelsFile.readBytes()
-        val imageBytes = imagesFile.readBytes()
-
-        val labelMagic = Arrays.copyOfRange(labelBytes, 0, OFFSET_SIZE)
-        val imageMagic = Arrays.copyOfRange(imageBytes, 0, OFFSET_SIZE)
-
-        if (ByteBuffer.wrap(labelMagic).int != LABEL_MAGIC) {
-            throw IOException("Bad magic number in label file!")
-        }
-
-        if (ByteBuffer.wrap(imageMagic).int != IMAGE_MAGIC) {
-            throw IOException("Bad magic number in image file!")
-        }
-
-        val numberOfLabels = ByteBuffer.wrap(Arrays.copyOfRange(labelBytes, NUMBER_ITEMS_OFFSET, NUMBER_ITEMS_OFFSET + ITEMS_SIZE)).int
-        val numberOfImages = ByteBuffer.wrap(Arrays.copyOfRange(imageBytes, NUMBER_ITEMS_OFFSET, NUMBER_ITEMS_OFFSET + ITEMS_SIZE)).int
-
-        if (numberOfImages != numberOfLabels) {
-            throw IOException("The number of labels and images do not match!")
-        }
-
-        val numRows = ByteBuffer.wrap(Arrays.copyOfRange(imageBytes, NUMBER_OF_ROWS_OFFSET, NUMBER_OF_ROWS_OFFSET + ROWS_SIZE)).int
-        val numCols = ByteBuffer.wrap(Arrays.copyOfRange(imageBytes, NUMBER_OF_COLUMNS_OFFSET, NUMBER_OF_COLUMNS_OFFSET + COLUMNS_SIZE)).int
-
-        if (numRows != ROWS && numCols != COLUMNS) {
-            throw IOException("Bad image. Rows and columns do not equal " + ROWS + "x" + COLUMNS)
-        }
-
-        val map = mutableMapOf<String, Array<String>>()
-        val list = mutableListOf<List<String>>()
-
-        for (i in 0 until numberOfLabels) {
-            val label = labelBytes[OFFSET_SIZE + ITEMS_SIZE + i]
-            val imageData = Arrays.copyOfRange(imageBytes, i * IMAGE_SIZE + IMAGE_OFFSET, i * IMAGE_SIZE + IMAGE_OFFSET + IMAGE_SIZE)
-
-            val imageDataList = imageData.iterator().asSequence().asStream().map { b -> b.toString() }.collect(toList())
-            imageDataList.add(label.toString())
-
-            //list.add(imageDataList.stream().collect(joining(",")))
-            list.add(imageDataList)
-        }
-        return list
     }
 }
