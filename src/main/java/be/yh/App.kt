@@ -12,16 +12,14 @@ import org.deeplearning4j.earlystopping.trainer.EarlyStoppingTrainer
 import org.deeplearning4j.eval.Evaluation
 import org.deeplearning4j.nn.conf.MultiLayerConfiguration
 import org.deeplearning4j.nn.conf.NeuralNetConfiguration
-import org.deeplearning4j.nn.conf.inputs.InputType
-import org.deeplearning4j.nn.conf.layers.*
+import org.deeplearning4j.nn.conf.layers.DenseLayer
+import org.deeplearning4j.nn.conf.layers.OutputLayer
 import org.deeplearning4j.nn.multilayer.MultiLayerNetwork
-import org.deeplearning4j.nn.weights.WeightInit
 import org.deeplearning4j.ui.api.UIServer
 import org.deeplearning4j.ui.stats.StatsListener
 import org.deeplearning4j.ui.storage.InMemoryStatsStorage
 import org.nd4j.linalg.activations.Activation
 import org.nd4j.linalg.learning.config.Adam
-import org.nd4j.linalg.lossfunctions.LossFunctions
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -34,21 +32,15 @@ object App {
         uiServer.attach(inMemoryStatsStorage)
 
         val dataset = ZalandaMNISTLoader().getDataSet()
-        val trainDatasetIterator = createDatasetIterator(dataset.subList(0, 50_000))
-        val testDatasetIterator = createDatasetIterator(dataset.subList(50_000, 60_000))
+        val trainDatasetIterator = createDatasetIterator(dataset.subList(0, 500))
+        val testDatasetIterator = createDatasetIterator(dataset.subList(500, 600))
 
         val cnnConfig = buildCNN()
 
         val cnn = MultiLayerNetwork(cnnConfig)
         cnn.init()
         cnn.setListeners(StatsListener(inMemoryStatsStorage))
-        val earlyStopping = false;
-
-        if (earlyStopping) {
-            earlyStoppingLearning(testDatasetIterator, cnnConfig, trainDatasetIterator)
-        } else {
-            regularLearning(cnn, trainDatasetIterator, testDatasetIterator)
-        }
+        regularLearning(cnn, trainDatasetIterator, testDatasetIterator)
     }
 
     private fun createDatasetIterator(dataset: MutableList<List<String>>): RecordReaderDataSetIterator {
@@ -100,49 +92,13 @@ object App {
     }
 
     private fun buildCNN(): MultiLayerConfiguration {
-        return NeuralNetConfiguration.Builder()
-                .seed(123)
-                .l2(0.0005) // ridge regression value
-                .updater(Adam())
-                .weightInit(WeightInit.XAVIER)
-                .list()
-                .layer(0, ConvolutionLayer.Builder(5, 5)
-                        .nIn(1)
-                        .stride(1, 1)
-                        .nOut(20)
-                        .activation(Activation.IDENTITY)
-                        .build())
-                .layer(1, BatchNormalization.Builder().build())
-                .layer(2, SubsamplingLayer.Builder(SubsamplingLayer.PoolingType.MAX)
-                        .kernelSize(2, 2)
-                        .stride(2, 2)
-                        .build())
-                .layer(3, ConvolutionLayer.Builder(5, 5)
-                        .stride(1, 1) // nIn need not specified in later layers
-                        .nOut(50)
-                        .activation(Activation.IDENTITY)
-                        .build())
-                .layer(4, BatchNormalization.Builder().build())
-                .layer(5, SubsamplingLayer.Builder(SubsamplingLayer.PoolingType.MAX)
-                        .kernelSize(2, 2)
-                        .stride(2, 2)
-                        .build())
-                .layer(6, DenseLayer.Builder().activation(Activation.RELU)
-                        .nOut(500)
-                        .dropOut(0.5)
-                        .build())
-                .layer(7, BatchNormalization.Builder().build())
-                .layer(8, DenseLayer.Builder().activation(Activation.RELU)
-                        .nOut(500)
-                        .dropOut(0.5)
-                        .build())
-                .layer(9, OutputLayer.Builder(LossFunctions.LossFunction.NEGATIVELOGLIKELIHOOD)
-                        .nOut(10)
-                        .activation(Activation.SOFTMAX)
-                        .build())
-                .setInputType(InputType.convolutionalFlat(28, 28, 1)) // InputType.convolutional for normal image
-                .backprop(true)
-                .build()
+        // conv1
+        // conv2
+        // pooling
+        // dense
+        // batchn
+        // outputlayer
+        // neuralnet
     }
 
     private fun buildMultiLayerModel(): MultiLayerConfiguration? {
